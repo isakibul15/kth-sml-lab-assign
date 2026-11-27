@@ -528,6 +528,19 @@ With an eight-epoch budget on one T4, ResNet-18 reaches 81.7\% test accuracy aga
 
 In the challenges, FP16 tripled ResNet-18's throughput at no loss of accuracy, while pruning 80\% of its weights only shrank the compressed file. On unseen corruptions and new photographs no model was best everywhere: strong augmentation transferred to blur and JPEG but not to contrast or CIFAR-10.1, where ResNet-18 kept the lead.
 
+\section*{Use of AI tools}
+\addcontentsline{toc}{section}{Use of AI tools}
+We used AI assistants as a study aid throughout this lab. Our goal was to understand the material better and learn it in more depth, not to have the work done for us. We mainly used them to:
+\begin{itemize}
+\item get explanations of concepts we found hard, for example why residual connections let a deep network train with plain SGD, how FGSM uses the gradient with respect to the input, why weight decay in SGD equals an L2 penalty, and why unstructured pruning shrinks the compressed file but not the inference time;
+\item ask follow-up questions and work through small examples until we could explain an idea in our own words;
+\item discuss how to interpret our results, for example whether a difference between two runs was larger than the seed spread.
+% Uncomment and adjust these if they apply to your group:
+% \item help debug parts of the notebook code;
+% \item suggest improvements to the language and structure of this report.
+\end{itemize}
+We did not take the explanations at face value but compared them with the course material, the cited papers and our own results. All numbers and figures in this report come from our own run of the notebook. We are responsible for everything in this report, and each of us can explain the code, the methods and the results.
+
 \section*{Reproduction}
 \addcontentsline{toc}{section}{Reproduction}
 Open \texttt{ID2223\_Lab1\_\allowbreak Full\_\allowbreak End\_\allowbreak to\_\allowbreak End.ipynb} in Google Colab, choose a T4 GPU runtime and run all cells. The notebook downloads CIFAR-10 with torchvision and CIFAR-10.1 (about 6 MB) from the authors' repository, mounts Google Drive and stores checkpoints and figures under \texttt{MyDrive/kth-sml-lab1/local/}. With \texttt{FORCE\_RETRAIN = True} every model is retrained, which takes a little over an hour on a T4 including the challenges, while with \texttt{False} finished runs load from Drive and interrupted ones resume. \texttt{CLEAR\_ARTIFACTS = True} empties the stored checkpoints and figures first. The reported run used Python 3.13.16, PyTorch 2.14.1 and torchvision 0.29.1 (CUDA 13.0). Part A of the notebook is the introductory Lab 1 tutorial and is independent of the CIFAR-10 work in Part B.
