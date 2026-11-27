@@ -23,7 +23,7 @@
 \pagestyle{fancy}
 \fancyhf{}
 \lhead{ID2223 Lab 1}
-\rhead{CIFAR-10: Tasks 1--6}
+\rhead{CIFAR-10: Tasks 1--6 and challenges}
 \cfoot{\thepage}
 \captionsetup{font=small,labelfont=bf}
 \newcommand{\fig}[3]{\begin{figure}[htbp]\centering\includegraphics[width=#2\linewidth]{#1}\caption{#3}\end{figure}}
@@ -41,13 +41,13 @@
 \vspace{6mm}
 {\LARGE AlexNet and ResNet-18: accuracy, robustness and cost\par}
 \vspace{20mm}
-{\large Report for Tasks 1--6\par}
+{\large Report for Tasks 1--6 and both optional challenges\par}
 \vfill
 \begin{tabular}{rl}
 Group: & Group Skibzz\\[3mm]
 Students: & Md Ahsanul Karim, \texttt{makari@kth.se}\\
  & Md Sakibul Islam, \texttt{msis3@kth.se}\\
- & Rong Jin, \texttt{rongjin0715@gmail.com}\\[5mm]
+ & Rong Jin, \texttt{rongjin@kth.se}\\[5mm]
 Date: & \today\\[5mm]
 Notebook: & \texttt{ID2223\_Lab1\_Full\_End\_to\_End.ipynb}\\
 Hardware: & Google Colab, NVIDIA Tesla T4\\
@@ -62,167 +62,173 @@ Hardware: & Google Colab, NVIDIA Tesla T4\\
 % ---------------------------------------------------------------------------
 \section{Introduction and setup}
 
-We train two convolutional networks on CIFAR-10, a CIFAR-adapted AlexNet and a CIFAR-adapted ResNet-18, and compare them on accuracy, robustness and cost. Tasks 1 to 5 prepare the data, build and train the models, vary capacity and regularization, test robustness to corrupted inputs and look at individual predictions and adversarial examples. Task 6 puts all configurations side by side and asks which one we would actually pick.
+We train a CIFAR-adapted AlexNet and a CIFAR-adapted ResNet-18 on CIFAR-10 and compare them on accuracy, robustness and cost. Tasks 1 to 5 cover the data, the two models, capacity and regularization, corrupted inputs, and predictions and adversarial examples. Task 6 asks which configuration we would actually pick. In the two optional challenges we compress the chosen model and test the selected models on shifts they never saw.
 
-Every number and figure in this report comes from a single top-to-bottom run of the notebook \texttt{ID2223\_Lab1\_\allowbreak Full\_\allowbreak End\_\allowbreak to\_\allowbreak End.ipynb} on a Google Colab Tesla T4. All models were retrained in that run (\texttt{FORCE\_RETRAIN = True}), so the timings are comparable with each other. The figures are the files the notebook saved to \texttt{artifacts/local/figures/}.
+All numbers and figures come from one top-to-bottom run of \texttt{ID2223\_Lab1\_\allowbreak Full\_\allowbreak End\_\allowbreak to\_\allowbreak End.ipynb} on a Colab Tesla T4, with every model retrained (\texttt{FORCE\_RETRAIN = True}), so the timings can be compared. The session was interrupted once, and twelve cells lost their displayed output although they ran. For those, the notebook shows the output of an earlier T4 run of the same code, which gave identical accuracies to two decimals, and every training time in this report is from the final run.
 
-\paragraph{Compute budget.} We fixed one budget for every experiment: eight epochs over the 45,000 training images, batch size 64, SGD with learning rate 0.01 and momentum 0.9, no learning-rate schedule, and 32-bit floating point on one T4. Weight decay is $5\times10^{-4}$ and dropout 0.5 unless an experiment changes them. Under this budget one AlexNet run takes about 80 seconds and one ResNet-18 run about six minutes.
+\paragraph{Compute budget:} Every experiment gets the same budget: eight epochs over 45,000 training images, batch size 64, SGD with learning rate 0.01 and momentum 0.9, no learning-rate schedule, FP32 on one T4. Weight decay is $5\times10^{-4}$ and dropout 0.5 unless an experiment changes them. One AlexNet run takes about 80 seconds, one ResNet-18 run about six minutes.
 
 % ---------------------------------------------------------------------------
 \section{Task 1: Study and prepare the data}
 
-\subsection{What an example is, and how the classes are distributed}
-A CIFAR-10 example is a $32\times32$ colour photograph stored as a $(3,32,32)$ tensor of 8-bit values in $[0,255]$, labelled with one of ten classes: airplane, automobile, bird, cat, deer, dog, frog, horse, ship and truck. The provided training set has 50,000 images and the test set 10,000. Each class has exactly 5,000 training and 1,000 test images, so overall accuracy is not skewed by class frequency. Per-class results still matter, as Task 5 shows.
+\subsection{Examples and class distribution}
+An example is a $32\times32$ colour photograph, stored as a $(3,32,32)$ tensor of 8-bit values, with one of ten labels: airplane, automobile, bird, cat, deer, dog, frog, horse, ship or truck. There are 50,000 training and 10,000 test images, exactly 5,000 and 1,000 per class, so class frequency does not skew overall accuracy.
 
-\fig{t1_examples.png}{0.5}{Eight random training images per class. At $32\times32$ pixels, viewpoint, background and object size vary a lot, and some objects fill only a small part of the frame.}
+\fig{t1_examples.png}{0.5}{Eight random training images per class. Viewpoint, background and object size vary a lot, and some objects fill only a small part of the frame.}
 
-Simple pixel statistics already show that some classes come with typical colours. Airplane and ship images are the brightest and bluest (mean blue intensity 0.589 and 0.555, against 0.446 for the whole training split), because sky and water fill much of the frame. Frog images are the darkest (mean brightness 0.418) and the least blue (0.345). A network can use such background cues, which helps on clean data and can hurt when the colours are disturbed.
+Some classes come with typical colours. Airplane and ship images are the brightest and bluest (mean blue 0.589 and 0.555, against 0.446 over the training split), because sky and water fill much of the frame. Frog images are the darkest (brightness 0.418) and least blue (0.345). A network can pick up such background cues. That helps on clean data and can hurt once colours are disturbed.
 
 \subsection{Split and preprocessing}
-We split the 50,000 provided training images with a stratified random split (\texttt{SPLIT\_SEED = 2223}) into 45,000 for training and 5,000 for validation, which gives 4,500 and 500 images per class. The 10,000 test images stay untouched until final evaluation. Validation accuracy is used to pick checkpoints and compare settings; test accuracy is only reported.
+A stratified split (\texttt{SPLIT\_SEED = 2223}) divides the 50,000 training images into 45,000 for training and 5,000 for validation, 4,500 and 500 per class. Validation accuracy picks checkpoints and compares settings. The 10,000 test images are only used for final evaluation.
 
-Both networks get the same input: pixels are scaled to $[0,1]$ and then standardized per channel,
+Both networks get the same input. Pixels are scaled to $[0,1]$ and standardized per channel,
 \[
 x'_c = \frac{x_c-\mu_c}{\sigma_c},\qquad
 \boldsymbol{\mu}=(0.4913,\,0.4822,\,0.4464),\quad
-\boldsymbol{\sigma}=(0.2470,\,0.2434,\,0.2615).
+\boldsymbol{\sigma}=(0.2470,\,0.2434,\,0.2615),
 \]
-The mean and standard deviation are computed on the 45,000 training images only, so no information from validation or test leaks into preprocessing. No resizing is needed because both architectures are adapted to $32\times32$ inputs. The splits are kept on the GPU as 8-bit tensors and converted batch by batch, which keeps the data pipeline fast and reusable across all experiments. Each image keeps its original index, so predictions can be traced back to specific images.
+with statistics from the 45,000 training images only, so nothing leaks from validation or test. No resizing is needed, since both architectures are adapted to $32\times32$ inputs. Every image keeps its original index, which lets us trace predictions back to specific images.
 
-Augmentation (used from Task 4 onwards) is applied in the $[0,1]$ pixel domain before normalization and only to training batches. \emph{Standard} augmentation pads by 4 pixels with reflection, crops back to $32\times32$ at a random position and flips horizontally with probability 0.5. \emph{Strong} augmentation adds, for about half of the images, a random rotation of up to $15^\circ$ and a shear of up to $10^\circ$, and for about half, Gaussian noise with a standard deviation drawn up to 0.06.
+Augmentation (from Task 4 on) works in the $[0,1]$ domain before normalization and only on training batches. \emph{Standard} augmentation pads by 4 pixels with reflection, crops back to $32\times32$ at a random position and flips horizontally with probability 0.5. \emph{Strong} augmentation adds, for about half of the images, a rotation of up to $15^\circ$ and a shear of up to $10^\circ$, and for about half, Gaussian noise with a standard deviation of up to 0.06.
 
-\fig{t1_augmentations.png}{0.7}{The same six training images without augmentation, with standard augmentation and with strong augmentation.}
+\fig{t1_augmentations.png}{0.7}{Six training images without augmentation, with standard augmentation and with strong augmentation.}
 
 \subsection{Controlling randomness}
-Three seeds control the randomness: \texttt{SPLIT\_SEED = 2223} for the split, \texttt{BASE\_SEED = 42} for weight initialization, dropout and the shuffling order, and fixed seeds for the corrupted evaluation images (Task 4) and attacks (Task 5). Python, NumPy and PyTorch are seeded together, cuDNN benchmarking is off and deterministic algorithms are requested. Each training run also owns its own generator for shuffling and augmentation, so runs do not affect each other's random streams.
+\texttt{SPLIT\_SEED = 2223} fixes the split and \texttt{BASE\_SEED = 42} the initial weights, dropout and shuffling, while the corrupted evaluation images (Task 4) and the attacks (Task 5) have their own fixed seeds. Python, NumPy and PyTorch are seeded together, cuDNN benchmarking is off and deterministic algorithms are requested. Each training run has its own generator for shuffling and augmentation, so runs do not disturb each other's random streams.
 
-This works in practice. The Task 3 and Task 4 runs reached exactly the same validation accuracies, to two decimals, as an earlier run of the same code in a different Colab T4 session. Exact equality is not guaranteed on other GPUs or library versions, and timings always vary somewhat between sessions.
+It works: the Task 3 and 4 validation accuracies were identical to two decimals in three separate Colab T4 sessions. Other GPUs or library versions may still give slightly different numbers, and timings always move a little.
 
 % ---------------------------------------------------------------------------
 \section{Task 2: Implement and compare AlexNet and ResNet-18}
 
 \subsection{AlexNet for CIFAR-10}
-The original AlexNet was designed for $224\times224$ ImageNet images and starts with an $11\times11$ convolution with stride 4. On a $32\times32$ image that stem would throw away most of the spatial detail in the first layer, so our version uses five $3\times3$ convolutions with padding 1 and three $2\times2$ max-pooling steps (Table~\ref{tab:alexnet}). We keep the original pattern of five convolutional layers with channel widths 64, 192, 384, 256 and 256, followed by a fully connected classifier with dropout. The classifier is smaller than the original (1024 and 512 hidden units instead of 4096 and 4096), because the flattened feature vector has only 4,096 values. The network has 6{,}976{,}842 trainable parameters.
+The original AlexNet starts with an $11\times11$ convolution with stride 4, built for $224\times224$ ImageNet images. On a $32\times32$ image that would throw away most of the detail in the first layer. We keep the five convolutional layers with 64, 192, 384, 256 and 256 channels, but use $3\times3$ kernels with padding 1 and three $2\times2$ max-pooling steps (Table~\ref{tab:layers}). The classifier is smaller than the original (1024 and 512 hidden units instead of 4096 and 4096), because the flattened feature vector has only 4,096 values. Both hidden layers use ReLU and dropout 0.5.
 
-\begin{table}[htbp]\centering\small
-\caption{CIFAR-10 AlexNet: output size of each stage for one image.}\label{tab:alexnet}
-\begin{tabular}{ll}\toprule
-Stage & Output\\\midrule
-Input & $3\times32\times32$\\
-Conv $3\times3$ (64), ReLU, max-pool & $64\times16\times16$\\
-Conv $3\times3$ (192), ReLU, max-pool & $192\times8\times8$\\
-Conv $3\times3$ (384), ReLU & $384\times8\times8$\\
-Conv $3\times3$ (256), ReLU & $256\times8\times8$\\
-Conv $3\times3$ (256), ReLU, max-pool & $256\times4\times4$\\
-Flatten & 4096\\
-Linear, ReLU, dropout 0.5 & 1024\\
-Linear, ReLU, dropout 0.5 & 512\\
-Linear & 10 logits\\\bottomrule
-\end{tabular}\end{table}
-
-Each convolution slides the same small set of learned filters over the whole image, so a pattern is detected wherever it appears. The first layer responds to edges, colour blobs and simple textures. Later layers combine these into parts and shapes, and every pooling step halves the resolution so that a $3\times3$ filter deeper in the network covers a larger part of the image. The fully connected head then maps the final $256\times4\times4$ feature map to ten class scores.
+Each convolution slides the same small filters over the whole image, so a pattern is found wherever it appears. The first layer reacts to edges, colour blobs and simple textures, and later layers combine these into parts and shapes. Each pooling step halves the resolution, so a $3\times3$ filter deeper in the network sees a larger part of the image. The fully connected head maps the final $256\times4\times4$ feature map to ten class scores.
 
 \subsection{ResNet-18 for CIFAR-10}
-ResNet-18 replaces the original $7\times7$ stride-2 stem and the max-pool with a single $3\times3$ convolution with stride 1, again so that the small image is not downsampled too early. After the stem come four stages of two basic blocks each, with 64, 128, 256 and 512 channels at resolutions $32\times32$, $16\times16$, $8\times8$ and $4\times4$. Global average pooling reduces the last feature map to 512 numbers, and one linear layer produces the ten logits. The network has 11{,}173{,}962 trainable parameters, 1.60 times as many as our AlexNet.
+ResNet-18 replaces the $7\times7$ stride-2 stem and the max-pool with a single $3\times3$ convolution with stride 1, again so the small image is not downsampled too early. Four stages of two basic blocks follow, with 64, 128, 256 and 512 channels at $32\times32$, $16\times16$, $8\times8$ and $4\times4$. Global average pooling and one linear layer produce the ten logits.
 
-A basic block computes two $3\times3$ convolutions with batch normalization and adds its input back before the final ReLU:
+A basic block computes two $3\times3$ convolutions with batch normalization and adds its input back before the last ReLU:
 \[
 \mathbf{y}=\operatorname{ReLU}\bigl(F(\mathbf{x})+S(\mathbf{x})\bigr).
 \]
-$S$ is the identity when the shape stays the same. When a stage halves the resolution and doubles the channels, $S$ is a $1\times1$ convolution with stride 2 followed by batch normalization. Because the identity path is always there, each block only has to learn a correction to its input, and gradients reach the early layers directly through the shortcuts. This is what makes networks of this depth trainable with plain SGD.
+$S$ is the identity when the shape stays the same, and a $1\times1$ convolution with stride 2 plus batch normalization when a stage halves the resolution and doubles the channels. Because the identity path is always there, a block only has to learn a correction to its input, and gradients reach the early layers directly through the shortcuts. That is what lets a network this deep train with plain SGD.
 
-Both models passed a shape check: a batch of two images gives an output of shape $(2,10)$.
+\subsection{Where the parameters are}
+\begin{table}[htbp]\centering\small
+\caption{Output size and parameters per layer for one $32\times32$ image, measured with forward hooks.}\label{tab:layers}
+\begin{tabular}{lrr@{\qquad}lrr}\toprule
+\multicolumn{3}{c}{AlexNet} & \multicolumn{3}{c}{ResNet-18}\\\cmidrule(r){1-3}\cmidrule(l){4-6}
+Layer & Output & Parameters & Layer & Output & Parameters\\\midrule
+conv1 + pool & $64\times16\times16$ & 1{,}792 & stem & $64\times32\times32$ & 1{,}856\\
+conv2 + pool & $192\times8\times8$ & 110{,}784 & stage 1 & $64\times32\times32$ & 147{,}968\\
+conv3 & $384\times8\times8$ & 663{,}936 & stage 2 & $128\times16\times16$ & 525{,}568\\
+conv4 & $256\times8\times8$ & 884{,}992 & stage 3 & $256\times8\times8$ & 2{,}099{,}712\\
+conv5 + pool & $256\times4\times4$ & 590{,}080 & stage 4 & $512\times4\times4$ & 8{,}393{,}728\\
+fc1 & 1024 & 4{,}195{,}328 & avg-pool & 512 & 0\\
+fc2 & 512 & 524{,}800 & fc & 10 & 5{,}130\\
+fc3 & 10 & 5{,}130 & & & \\\midrule
+Total & & 6{,}976{,}842 & Total & & 11{,}173{,}962\\\bottomrule
+\end{tabular}\end{table}
+
+In AlexNet, fc1 alone holds 4,195,328 weights, 60\% of the model, and the classifier has 4,725,258 against 2,251,584 in the convolutions. That is why changing the classifier width in Task 3 moves the parameter count so much. ResNet-18 has almost no linear layer, and three quarters of its parameters sit in stage 4. It has 1.60 times as many parameters as AlexNet, but it keeps the full $32\times32$ resolution through stage 1, where AlexNet halves it after the first convolution. This is why it is almost five times slower per epoch.
 
 \subsection{Training and checkpoint selection}
-Both baselines use the compute budget from the introduction with cross-entropy loss on the logits. After every epoch the model is evaluated on the 5,000 validation images with dropout off and without gradient updates. The general training routine saves the latest state every epoch (weights, optimizer and shuffling generator, so a run can resume) and keeps a separate copy of the epoch with the highest validation accuracy. That best checkpoint is the one used afterwards. The Task 2 AlexNet was trained with an explicit loop that validates every epoch and saves the final weights; its best validation epoch was also its last.
+Both baselines use the budget above with cross-entropy loss on the logits. After every epoch the model is evaluated on the 5,000 validation images with dropout off. The training routine saves the latest state each epoch (weights, optimizer and shuffling generator, so a run can resume) and keeps a copy of the epoch with the best validation accuracy, which is the checkpoint used afterwards. The Task 2 AlexNet was trained with an explicit loop that saves the final weights, and its best epoch was also its last.
 
 \subsection{Results}
-
 \begin{table}[htbp]\centering\small
-\caption{Task 2 baselines. Validation accuracy is from the selected checkpoint; test accuracy and loss are on the 10,000 official test images. AlexNet time is from the identical Task 3 baseline run, because the Task 2 loop did not record time.}\label{tab:baselines}
+\caption{Task 2 baselines. Test accuracy and loss are on the 10,000 test images. The AlexNet time is from the identical Task 3 baseline run, because the Task 2 loop did not record time.}\label{tab:baselines}
 \begin{tabular}{lrrrrr}\toprule
 Model & Parameters & Best val. acc. & Test acc. & Test loss & Training time\\\midrule
-AlexNet & 6{,}976{,}842 & 78.04\% (epoch 8) & 77.95\% & 0.6767 & 78.9 s\\
-ResNet-18 & 11{,}173{,}962 & 82.64\% (epoch 8) & 81.71\% & 0.6316 & 365.2 s\\\bottomrule
+AlexNet & 6{,}976{,}842 & 78.04\% (epoch 8) & 77.95\% & 0.6767 & 79.6 s\\
+ResNet-18 & 11{,}173{,}962 & 82.64\% (epoch 8) & 81.71\% & 0.6316 & 372.1 s\\\bottomrule
 \end{tabular}\end{table}
 
 \fig{t2_accuracy_comparison.png}{0.95}{Training and validation accuracy per epoch for the two baselines.}
 
-ResNet-18 is 3.76 percentage points more accurate on the test set and also has the lower test loss. It learns much faster: after one epoch it is at 56.1\% validation accuracy, where AlexNet is at 41.5\%. It also fits the training data far more closely. At the last epoch the gap between training and validation accuracy is 12.7 points for ResNet-18 (95.3\% against 82.6\%) and 3.9 points for AlexNet (81.9\% against 78.0\%). So ResNet-18 overfits more, yet still generalizes better.
+ResNet-18 is 3.76 points more accurate on the test set, with a lower test loss. It learns much faster (56.1\% validation accuracy after one epoch, against 41.5\% for AlexNet) and fits the training data far more closely. At the last epoch its train-validation gap is 12.7 points (95.3\% against 82.6\%), AlexNet's 3.9 points (81.9\% against 78.0\%). So ResNet-18 overfits more and still generalizes better.
 
-Its validation curve is also bumpier. It drops from 76.4\% at epoch 3 to 75.2\% at epoch 5 before climbing to 82.6\%. With a constant learning rate and batch normalization, single-epoch validation scores move around, so the choice of the ``best'' epoch is partly luck. Task 6 comes back to this.
+Its validation curve is bumpier, too. It dips from 76.4\% at epoch 3 to 75.2\% at epoch 5 before climbing to 82.6\%. With a constant learning rate and batch normalization, single-epoch scores move around, so which epoch counts as ``best'' is partly luck. One ResNet-18 epoch takes 46.5 seconds against 10.0 for AlexNet, 4.7 times as long.
 
-The cost is real. One ResNet-18 epoch takes 45.7 seconds on the T4, against 9.9 seconds for AlexNet, so the full run takes 4.6 times as long.
+\subsection{What the convolutions learned}
+\fig{t2_first_layer_filters.png}{0.75}{The 64 first-layer filters of each trained model, each $3\times3$ filter rescaled to the full colour range.}
+
+With $3\times3$ kernels the first-layer filters are too small to look like the clean edge detectors of ImageNet models with $11\times11$ kernels. Most are colour-contrast patterns: one colour on one side and its opposite on the other, or one dominant colour.
+
+\fig{t2_feature_maps.png}{0.99}{A test image (a cat) and the eight most active channels after an early and a deep layer of each model.}
+
+The feature maps show the hierarchy. After the first layer, both networks still trace the outline of the cat, the edge of the blanket and the background. After AlexNet's conv5 and ResNet-18's stage 3 the maps are $8\times8$, and each channel lights up for a few regions instead of edges. ResNet-18's deep activations cover more of the image, while AlexNet's respond to one or two small spots. This is one image and eight channels, so it illustrates the idea rather than measuring it.
 
 % ---------------------------------------------------------------------------
 \section{Task 3: Capacity and regularization}
 
-All comparisons use the AlexNet baseline (classifier $1024\to512$, dropout 0.5, weight decay $5\times10^{-4}$) and change exactly one setting. The split, preprocessing, optimizer, learning rate, batch size, seed and eight-epoch budget stay fixed. This baseline is trained by the general training routine and differs from the Task 2 AlexNet only in its random state (initial weights and dropout masks). Its accuracy (78.56\% validation, 78.71\% test) is within the seed-to-seed variation measured in Task 6.
+Each comparison starts from the AlexNet baseline (classifier $1024\to512$, dropout 0.5, weight decay $5\times10^{-4}$) and changes one setting. Split, preprocessing, optimizer, learning rate, batch size, seed and budget stay fixed. This baseline is trained by the general training routine and differs from the Task 2 AlexNet only in its random state, and its 78.56\% validation and 78.71\% test accuracy are within the seed spread measured in Task 6.
 
 \subsection{Capacity: classifier width}
-We keep the five convolutional layers and change only the width of the two hidden linear layers: small ($256\to128$), baseline ($1024\to512$) and large ($2048\to1024$).
+We keep the five convolutions and change the two hidden linear layers: small ($256\to128$), baseline ($1024\to512$) and large ($2048\to1024$).
 
 \begin{table}[htbp]\centering\small
 \caption{Capacity comparison after eight epochs.}
 \begin{tabular}{lrrrr}\toprule
 Width & Parameters & Final train acc. & Best val. acc. & Training time\\\midrule
-Small & 3{,}334{,}602 & 77.20\% & 76.72\% & 72.4 s\\
-Baseline & 6{,}976{,}842 & 82.22\% & 78.56\% & 78.9 s\\
-Large & 12{,}750{,}666 & 83.42\% & 79.06\% & 88.8 s\\\bottomrule
+Small & 3{,}334{,}602 & 77.20\% & 76.72\% & 72.6 s\\
+Baseline & 6{,}976{,}842 & 82.22\% & 78.56\% & 79.6 s\\
+Large & 12{,}750{,}666 & 83.42\% & 79.06\% & 89.9 s\\\bottomrule
 \end{tabular}\end{table}
 
 \fig{t3_capacity_accuracy.png}{0.95}{Training and validation accuracy for three classifier widths.}
 \fig{t3_capacity_loss.png}{0.95}{Training and validation loss for three classifier widths.}
 
-More width helps, but less and less. Going from small to baseline adds 1.84 points of validation accuracy; going from baseline to large adds only 0.50, for 1.83 times the parameters and 12.5\% more training time. The small model fits the training data least (77.2\%) and has the highest validation loss throughout, which points to some underfitting. None of the three shows clear overfitting yet. Validation loss is still falling for all of them at epoch 8, and all three reach their best validation accuracy in the last epoch. On the test set, the large model (78.68\%) is no better than the baseline (78.71\%).
+Width helps, with diminishing returns. Small to baseline adds 1.84 points of validation accuracy, but baseline to large adds only 0.50 for 1.83 times the parameters and 12.9\% more training time. On the test set the large model (78.68\%) is no better than the baseline (78.71\%). The small model fits the training data least (77.2\%) and has the highest validation loss throughout, which points to some underfitting. None of the three overfits yet: validation loss is still falling at epoch 8 and all reach their best accuracy in the last epoch.
 
 \subsection{L2 regularization}
-In PyTorch's SGD, weight decay adds $\lambda\mathbf{w}$ to every gradient, which is the same as an L2 penalty $\tfrac{\lambda}{2}\|\mathbf{w}\|^2$ on the loss. We compare $\lambda=0$, the baseline $5\times10^{-4}$ and a strong $5\times10^{-3}$.
+In PyTorch's SGD, weight decay adds $\lambda\mathbf{w}$ to every gradient, which equals an L2 penalty $\tfrac{\lambda}{2}\|\mathbf{w}\|^2$ on the loss. We compare $\lambda=0$, the baseline $5\times10^{-4}$ and a strong $5\times10^{-3}$.
 
 \begin{table}[htbp]\centering\small
 \caption{Weight decay comparison.}
 \begin{tabular}{lrrrr}\toprule
 Weight decay & Final train acc. & Best val. acc. & Best epoch & Training time\\\midrule
-0 & 83.92\% & 79.94\% & 8 & 75.2 s\\
-0.0005 & 82.22\% & 78.56\% & 8 & 78.9 s\\
-0.005 & 67.64\% & 69.28\% & 8 & 79.0 s\\\bottomrule
+0 & 83.92\% & 79.94\% & 8 & 77.0 s\\
+0.0005 & 82.22\% & 78.56\% & 8 & 79.6 s\\
+0.005 & 67.64\% & 69.28\% & 8 & 79.9 s\\\bottomrule
 \end{tabular}\end{table}
 
 \fig{t3_l2_comparison.png}{0.85}{Training and validation accuracy and loss for three weight decay settings.}
 
-Strong weight decay clearly hurts. Training accuracy only reaches 67.6\% and validation 69.3\%, so the penalty keeps the weights too small for the network to fit the data in eight epochs. That is underfitting, not better generalization. Removing weight decay gave the best validation accuracy (79.94\%, 1.38 points above the baseline). That difference is about the size of the seed-to-seed spread in Task 6, though, so we would not conclude that L2 regularization is useless. Over eight epochs the models are not yet overfitting much, and that is when weight decay would matter. Weight decay costs nothing extra to compute; the small time differences are run-to-run noise.
+Strong weight decay clearly hurts. Training accuracy stops at 67.6\% and validation at 69.3\%: the penalty keeps the weights too small to fit the data in eight epochs, which is underfitting. Without weight decay the model reached the best validation accuracy, 79.94\%, 1.38 points above the baseline. That is about the size of the seed spread, though, and the models barely overfit in eight epochs, which is exactly when weight decay would matter. So we do not conclude that L2 is useless here. It costs no extra compute.
 
 \subsection{Dropout}
 We compare no dropout, dropout 0.3 and the baseline's 0.5, applied after both hidden linear layers.
 
 \begin{table}[htbp]\centering\small
-\caption{Dropout comparison. The train-validation gap is measured at the last epoch.}
+\caption{Dropout comparison. The gap is between training and validation accuracy at the last epoch.}
 \begin{tabular}{lrrrrr}\toprule
 Dropout & Final train acc. & Final val. acc. & Gap & Best val. acc. (epoch) & Training time\\\midrule
-0.0 & 85.37\% & 77.64\% & 7.73 & 78.64\% (7) & 78.9 s\\
-0.3 & 83.53\% & 78.22\% & 5.31 & 78.46\% (7) & 79.4 s\\
-0.5 & 82.22\% & 78.56\% & 3.66 & 78.56\% (8) & 78.9 s\\\bottomrule
+0.0 & 85.37\% & 77.64\% & 7.73 & 78.64\% (7) & 79.6 s\\
+0.3 & 83.53\% & 78.22\% & 5.31 & 78.46\% (7) & 79.9 s\\
+0.5 & 82.22\% & 78.56\% & 3.66 & 78.56\% (8) & 79.6 s\\\bottomrule
 \end{tabular}\end{table}
 
 \fig{t3_dropout_comparison.png}{0.85}{Training and validation accuracy and loss for three dropout probabilities.}
 
-Dropout does what it should. Without it the network fits the training data best (85.4\%), but validation accuracy peaks at epoch 7 and then falls by one point, the first sign of overfitting in this study. The train-validation gap shrinks from 7.7 points without dropout to 3.7 points with 0.5. The best validation accuracies are within 0.2 points of each other, so dropout changes how the model learns more than how good it ends up after eight epochs. Dropout has no measurable effect on training time.
+Without dropout the network fits the training data best (85.4\%), but its validation accuracy peaks at epoch 7 and then drops a point, the first sign of overfitting in this study. The gap shrinks from 7.7 points without dropout to 3.7 with 0.5. The best validation accuracies lie within 0.2 points of each other, so after eight epochs dropout changes how the model learns more than where it ends up.
 
-\subsection{Cost of capacity and regularization}
-Only width changes the cost. Parameters go from 3.3 to 7.0 to 12.8 million and training time from 72.4 to 78.9 to 88.8 seconds; the convolutions dominate the compute, so doubling the classifier adds much less than double the time. Weight decay and dropout leave the parameter count at 6{,}976{,}842 and the time unchanged. The logged peak GPU memory rises from 543 MB for the first run to over 900 MB for later ones, but that is because earlier models stay in memory during the session. These peaks are not per-model footprints.
+\subsection{Cost}
+Only width changes the cost: 3.3, 7.0 and 12.8 million parameters and 72.6, 79.6 and 89.9 seconds of training. Doubling the classifier adds far less than double the time, because the convolutions dominate the compute. Weight decay and dropout leave both parameters and time unchanged. The logged peak GPU memory (about 800 MB to over 2,000 MB) depends on which other models were still in memory, so it is not a per-model footprint.
 
 % ---------------------------------------------------------------------------
 \section{Task 4: Robustness}
 
 \subsection{Training conditions and corrupted evaluation set}
-We train the AlexNet baseline three ways: without augmentation (the Task 3 baseline), with standard augmentation (random crop and flip) and with strong augmentation (crop and flip plus random rotation, shear and noise; Section 2.2). Everything else is identical.
+We train the AlexNet baseline three ways: without augmentation (the Task 3 baseline), with standard augmentation and with strong augmentation (Section 2.2). Everything else is the same.
 
-For evaluation we take the 5,000 validation images and build three fixed versions: the clean images, every image rotated by $15^\circ$ (bilinear, reflection padding), and every image with Gaussian noise of standard deviation 0.06 added on the $[0,1]$ scale (fixed seed, clipped to $[0,1]$). All models see exactly the same pixels, and no model is trained or tuned on these images. We picked these two corruptions because they mimic a tilted camera and sensor noise, and kept them moderate so the label stays obvious to a person.
+For evaluation we take the 5,000 validation images in three fixed versions: clean, rotated by $15^\circ$ (bilinear, reflection padding), and with Gaussian noise of standard deviation 0.06 on the $[0,1]$ scale (fixed seed, clipped). All models see exactly the same pixels. The two corruptions mimic a tilted camera and sensor noise, and are mild enough that a person still sees the label. We use validation images because this comparison helps choose a training condition, and the test set stays reserved for Task 5 and the challenges.
 
 \subsection{Clean and corrupted accuracy}
-
 \begin{table}[htbp]\centering\small
-\caption{Accuracy on the same 5,000 validation images. The last column is the drop from clean to noisy.}
+\caption{Accuracy on the same 5,000 validation images. The last column is the drop from clean to noisy, in points.}
 \begin{tabular}{lrrrr}\toprule
 Training condition & Clean & Rotation $15^\circ$ & Noise $\sigma=0.06$ & Noise drop\\\midrule
 No augmentation & \textbf{78.56\%} & 70.32\% & 66.38\% & 12.18\\
@@ -232,10 +238,10 @@ Strong (+ rotation, shear, noise) & 76.40\% & \textbf{71.86\%} & \textbf{73.74\%
 
 \fig{t4_robustness_comparison.png}{0.72}{Clean, rotated and noisy accuracy for the three training conditions.}
 
-Strong augmentation trades 2.16 points of clean accuracy for 1.54 points under rotation and 7.36 points under noise. With it, adding noise costs the model only 2.7 points; without it, 12.2. Standard crop and flip does not help against these corruptions at all and is slightly worse everywhere after eight epochs. That makes sense: crops and flips teach invariance to position and mirroring, not to rotation or noise, and the extra variety slows down learning within a short budget. The gain from strong augmentation is largest for noise, which it trains on directly at up to the same strength. The evaluation rotation of $15^\circ$ sits at the edge of the training range, which may be why that gain is smaller.
+Strong augmentation gives up 2.16 points of clean accuracy and gains 1.54 under rotation and 7.36 under noise. With it, noise costs the model 2.7 points, and without it 12.2. Standard crop and flip does not help against either corruption and is slightly worse everywhere after eight epochs. Crops and flips teach invariance to position and mirroring, not to rotation or noise, and the extra variety slows learning in a short budget. The noise gain is largest because strong augmentation trains on noise of up to the same strength, while $15^\circ$ sits at the edge of its rotation range.
 
 \subsection{Which errors the corruptions introduce}
-A new error is an image that a model classifies correctly when clean and wrongly after corruption. This is not the same as the drop in accuracy, because a few images also go from wrong to right.
+A new error is an image a model gets right when clean and wrong after corruption. This differs from the accuracy drop, because a few images also go from wrong to right.
 
 \begin{table}[htbp]\centering\small
 \caption{New errors among the 5,000 validation images.}
@@ -245,15 +251,51 @@ Rotation $15^\circ$ & 647 (12.94\%) & 443 (8.86\%)\\
 Gaussian noise & 732 (14.64\%) & 252 (5.04\%)\\\bottomrule
 \end{tabular}\end{table}
 
-\fig{t4_noise_error_examples.png}{0.88}{Images the unaugmented AlexNet gets right when clean and wrong after adding noise.}
+Strong augmentation removes about two thirds of the noise-induced errors and a third of the rotation-induced ones.
 
-Strong augmentation removes about two thirds of the noise-induced errors (732 down to 252) and a third of the rotation-induced ones (647 down to 443). The examples in the figure also show what kind of errors noise causes. Four of the five noisy images (a truck, a car, a deer and a dog) are classified as frog. Only one error stays within a related group (truck to automobile). Noise breaks up smooth surfaces into speckled texture, and frog images in CIFAR-10 are often dark, mottled close-ups, so the model seems to read the added texture as ``frog''. We did not plot rotation errors, so we cannot say whether rotation produces the same pattern.
+\fig{t4_noise_error_examples.png}{0.88}{Images the unaugmented AlexNet gets right when clean and wrong after adding noise.}
+\fig{t4_rotation_error_examples.png}{0.88}{Images the unaugmented AlexNet gets right when clean and wrong after a $15^\circ$ rotation.}
+
+The two corruptions cause different mistakes. Four of the five noisy examples (a truck, a car, a deer and a dog) become frog. Noise turns smooth surfaces into speckle, and CIFAR-10 frogs are often dark, mottled close-ups, so the model seems to read the added texture as ``frog''. The rotated examples stay closer to the truth: trucks called automobile or ship, a frog called cat, all with the object clearly visible but tilted. Counting all new errors confirms this (Table~\ref{tab:errortypes}). Under noise the unaugmented model sends almost half of them to frog, but under rotation no class takes more than 23\% and the largest pairs are related classes. Strong augmentation removes the frog sink, and its remaining noise errors are mix-ups between similar animals.
+
+\begin{table}[htbp]\centering\small
+\caption{Where the new errors go: most common predicted class, its share, and the two largest true $\to$ predicted pairs.}\label{tab:errortypes}
+\resizebox{\linewidth}{!}{\begin{tabular}{llrlr@{\quad}l}\toprule
+Model & Corruption & New errors & Top prediction & Share & Largest pairs\\\midrule
+No aug. & Rotation & 647 & cat & 22.9\% & truck$\to$automobile (48), horse$\to$dog (39)\\
+No aug. & Noise & 732 & frog & 47.7\% & cat$\to$frog (86), airplane$\to$deer (81)\\
+Strong aug. & Rotation & 443 & dog & 19.2\% & truck$\to$automobile (36), frog$\to$cat (30)\\
+Strong aug. & Noise & 252 & truck & 21.0\% & dog$\to$cat (24), bird$\to$deer (24)\\\bottomrule
+\end{tabular}}\end{table}
+
+\subsection{Stronger corruptions}
+One strength cannot show how fast accuracy falls, so we evaluated the three AlexNet conditions and ResNet-18 on the same images at rotations from $0^\circ$ to $30^\circ$ and noise from $\sigma=0$ to $0.12$, without retraining (Table~\ref{tab:severity}).
+
+\begin{table}[htbp]\centering\small
+\caption{Validation accuracy (\%) at increasing corruption strength.}\label{tab:severity}
+\setlength{\tabcolsep}{4pt}
+\resizebox{\linewidth}{!}{\begin{tabular}{lrrrrrr@{\qquad}rrrrr}\toprule
+& \multicolumn{6}{c}{Rotation (degrees)} & \multicolumn{5}{c}{Noise $\sigma$}\\\cmidrule(r){2-7}\cmidrule(l){8-12}
+Model & 0 & 5 & 10 & 15 & 20 & 30 & 0 & 0.03 & 0.06 & 0.09 & 0.12\\\midrule
+No augmentation & 78.56 & 75.66 & 73.48 & 70.32 & 63.90 & 50.62 & 78.56 & 75.92 & 66.38 & 51.24 & 38.12\\
+Standard aug. & 77.56 & 73.90 & 71.88 & 68.44 & 64.02 & 50.52 & 77.56 & 74.62 & 65.06 & 52.36 & 40.22\\
+Strong aug. & 76.40 & 74.82 & 73.96 & 71.86 & \textbf{68.40} & \textbf{58.58} & 76.40 & 75.82 & \textbf{73.74} & \textbf{68.42} & \textbf{59.94}\\
+ResNet-18 & \textbf{82.64} & \textbf{79.40} & \textbf{76.74} & 71.86 & 64.48 & 47.92 & \textbf{82.64} & \textbf{77.76} & 62.98 & 46.06 & 33.20\\\bottomrule
+\end{tabular}}\end{table}
+
+\fig{t4_severity.png}{0.95}{Accuracy as the rotation angle (left) and the noise level (right) increase.}
+
+ResNet-18 leads up to $10^\circ$ and $\sigma=0.03$, ties with strong augmentation at $15^\circ$ and then falls fastest, ending last at $30^\circ$ (47.9\%) and at $\sigma=0.12$ (33.2\%). Strong augmentation loses least and keeps 58.6\% and 59.9\% at the strongest settings, against 50.6\% and 38.1\% without augmentation, and its lead keeps growing past the strengths it was trained on. Standard augmentation tracks the unaugmented model at every strength, so its lack of effect does not depend on the strength we chose.
 
 \subsection{Cost}
-Augmentation is free at inference time but not during training. Per epoch, training took 9.9 seconds without augmentation, 10.2 seconds with standard augmentation and 11.7 seconds with strong augmentation, so the full run costs 1.03 and 1.19 times the baseline. The extra time comes from the affine resampling and noise generation for every batch. Evaluating one model on 5,000 images takes about 0.34 seconds whichever way it was trained.
+Augmentation is free at inference but not in training. An epoch took 10.0 seconds without augmentation, 10.3 with standard and 11.6 with strong augmentation, so a full run costs 1.03 and 1.17 times the baseline. The extra time goes to the affine resampling and noise generation in every batch. Evaluating a model on 5,000 images takes about 0.33 seconds however it was trained.
 
 \subsection{Can strong transformations make labels ambiguous?}
-Yes. At $32\times32$ pixels a few pixels decide what the object is. A large crop can cut off the part that defines the class (the wheels of a truck, the head of a horse), and a large rotation turns an airplane or ship into an image that looks like nothing in the training set. Very strong noise can hide a small animal entirely. Training on such images then teaches the model to predict a label that a person could no longer see. We therefore kept the training transformations moderate: rotations up to $15^\circ$, shears up to $10^\circ$ and noise up to 0.06, applied to only about half of the images. Our evaluation uses the same moderate strengths, so the results do not tell us how the models behave under stronger distortions.
+Yes. At $32\times32$ a few pixels decide what the object is. A large crop can cut off the wheels of a truck or the head of a horse, a large rotation turns an airplane into something no training image looks like, and strong noise can hide a small animal. Training on such images teaches the model labels a person could no longer see, which is why we kept the training transformations moderate and applied them to only about half of the images.
+
+\fig{t4_severity_examples.png}{0.7}{Three validation images (all trucks) at the evaluated strengths.}
+
+Within our evaluation range this did not happen yet. A person can still name the class at $30^\circ$ (the reflection padding only adds mirrored corners) and mostly at $\sigma=0.12$, although the background is swamped. The steep drops at these strengths are failures of the models, not ambiguous labels. Rotations near $90^\circ$, crops that remove the object or noise that hides it would be a different case, and we did not test them.
 
 % ---------------------------------------------------------------------------
 \section{Task 5: Predictions and adversarial examples}
@@ -286,24 +328,25 @@ ship & 0.872 & 0.880 & 0.913 & 0.898\\
 truck & 0.771 & 0.838 & 0.851 & 0.887\\\bottomrule
 \end{tabular}\end{table}
 
+\paragraph{Training diagnostics:} The Task 2 learning curves explain part of the gap. ResNet-18 ends with a train-validation gap of 12.7 points, AlexNet with 3.9. Both were still improving at epoch 8 and picked their last epoch, so neither is held back by overfitting yet, and the test losses (0.6767 and 0.6316) follow the accuracy ranking.
+
 \fig{t5_confusion_matrices.png}{0.99}{Confusion matrices on the test set. Rows are true classes, columns predictions.}
 
-Cat is the hardest class for both models (F1 0.608 and 0.666), followed by bird and dog. Vehicles are easy: automobile, ship and truck all have F1 around 0.84 to 0.91.
+Cat is the hardest class for both models (F1 0.608 and 0.666), then bird and dog. Vehicles are easy, with F1 between 0.84 and 0.91 for automobile, ship and truck.
 
-The confusion matrices show where the two models differ. AlexNet uses ``cat'' as a catch-all for animals: it predicts cat for 1,387 test images while only 1,000 are cats, which is why its cat precision is just 0.523. Its biggest single error is 244 dogs labelled cat, and it also sends 100 birds and 103 horses to deer. ResNet-18 spreads its errors more evenly. Its cat/dog confusion runs both ways (153 cats called dog, 127 dogs called cat), and its dog recall is 13 points higher than AlexNet's. Among vehicles, truck to automobile is the main error for both (97 and 64 images).
+The confusion matrices show where the models differ. AlexNet uses ``cat'' as a catch-all for animals: it predicts cat for 1,387 test images, though only 1,000 are cats, so its cat precision is just 0.523. Its largest single error is 244 dogs labelled cat, and it sends 100 birds and 103 horses to deer. ResNet-18 spreads its errors more evenly. Its cat/dog confusion runs both ways (153 cats called dog, 127 dogs called cat), and its dog recall is 13 points higher. Among vehicles, truck to automobile is the main error for both (97 and 64 images).
 
 \subsection{Correct and incorrect predictions}
+\fig{t5_prediction_categories.png}{0.85}{Test images grouped by outcome. Rows from top: both models correct, both wrong, only AlexNet correct, only ResNet-18 correct. Titles give the true class and each model's prediction with its softmax confidence.}
 
-\fig{t5_prediction_categories.png}{0.85}{Test images grouped by outcome. Rows from top: both models correct, both wrong, only AlexNet correct, only ResNet-18 correct. Each title gives the true class and each model's prediction with its softmax confidence.}
-
-We show the four combinations of correct and wrong, so that neither model is shown only at its worst. When both models fail, the image is often hard for a person too: a dog standing in grass that both models call deer, a close-up of a bird's head, a black-and-white photo of an old car that both call truck. Several mistakes come with high confidence, for example 100\% for deer on the dog image and 92\% for ship on an airplane that ResNet-18 gets right. Softmax confidence is therefore not a reliable sign that a prediction is correct.
+We show all four combinations of right and wrong, so neither model appears only at its worst. When both fail, the image is often hard for a person too: a dog in grass that both call deer, a close-up of a bird's head, a black-and-white photo of an old car that both call truck. Several mistakes come with high confidence, such as 100\% for deer on the dog image, so softmax confidence does not tell us whether a prediction is right.
 
 \subsection{Adversarial examples with FGSM}
 We use the fast gradient sign method, a one-step white-box attack that knows the model and its weights:
 \[
 \mathbf{x}_{\mathrm{adv}}=\operatorname{clip}_{[0,1]}\Bigl(\mathbf{x}+\varepsilon\,\operatorname{sign}\bigl(\nabla_{\mathbf{x}}\,\mathcal{L}(f_\theta(\mathbf{x}),y)\bigr)\Bigr).
 \]
-The gradient is taken with respect to the input pixels in $[0,1]$, through the normalization layer, while the weights stay frozen. Every pixel moves by at most $\varepsilon$, so the constraint is $\|\mathbf{x}_{\mathrm{adv}}-\mathbf{x}\|_\infty\le\varepsilon$. A check on eight images confirmed a maximum change of 0.0300 at $\varepsilon=0.03$. Each model is attacked with its own gradients on the same first 500 test images.
+The gradient is taken with respect to the $[0,1]$ input pixels, through the normalization, with frozen weights. Every pixel moves by at most $\varepsilon$, so $\|\mathbf{x}_{\mathrm{adv}}-\mathbf{x}\|_\infty\le\varepsilon$, and a check confirmed a maximum change of 0.0300 at $\varepsilon=0.03$. Each model is attacked with its own gradients on the same first 500 test images.
 
 \begin{table}[htbp]\centering\small
 \caption{Accuracy on 500 test images under FGSM.}
@@ -315,103 +358,179 @@ ResNet-18 & 82.4\% & 16.0\% & 3.2\% & 1.6\%\\\bottomrule
 
 \fig{t5_fgsm_examples.png}{0.7}{Four test images that AlexNet classifies correctly, attacked with increasing $\varepsilon$. Titles give the prediction and its confidence.}
 
-Both models break down almost completely. At $\varepsilon=0.03$, a change of under 8 intensity levels out of 255 per pixel, accuracy falls below 5\% for both. ResNet-18 starts higher but falls faster: at $\varepsilon=0.01$ it keeps only 16.0\% against 34.6\% for AlexNet. The attacked images in the figure look almost unchanged, but the model becomes more confident in the wrong answer as $\varepsilon$ grows. The cat becomes a dog with 94.3\% confidence at $\varepsilon=0.03$, and the first ship becomes an automobile with 99.8\%. At $\varepsilon=0.01$ the attack does not always succeed: two of the four examples (the cat and the frog) keep their correct label, and AlexNet still classifies 34.6\% of the 500 images correctly. From $\varepsilon=0.03$ on, all four examples are misclassified.
+Both models break down. At $\varepsilon=0.03$, under 8 intensity levels out of 255 per pixel, both fall below 5\%. ResNet-18 starts higher but falls faster, keeping 16.0\% at $\varepsilon=0.01$ against 34.6\% for AlexNet. The attacked images look almost unchanged, yet the model grows more confident in the wrong answer: the cat becomes a dog with 94.3\% confidence at $\varepsilon=0.03$, the first ship an automobile with 99.8\%. At $\varepsilon=0.01$ the attack does not always work, and two of the four examples (the cat and the frog) keep their correct label. From $\varepsilon=0.03$ all four are wrong.
 
 \subsection{Random corruption versus an optimized attack}
-Gaussian noise in Task 4 is drawn without looking at the model. With $\sigma=0.06$ the typical pixel change is larger than FGSM's 0.03, yet the unaugmented AlexNet baseline still classifies 66.4\% of noisy images correctly. FGSM at half that per-pixel size leaves the same model at 6.8\% (Table~\ref{tab:tradeoff}). The difference is direction: FGSM moves every pixel the way that increases the loss most. Robustness to random corruption and robustness to an adversary are therefore different properties, and Task 6 shows that one does not predict the other.
+The Task 4 noise is drawn without looking at the model. At $\sigma=0.06$ it changes pixels more than FGSM's 0.03, yet the unaugmented AlexNet baseline still gets 66.4\% of noisy images right. FGSM at half that size leaves the same model at 6.8\% (Table~\ref{tab:tradeoff}), because it moves every pixel in the direction that raises the loss most. Robustness to random corruption and to an adversary are different properties, and Task 6 shows that one does not predict the other.
 
 % ---------------------------------------------------------------------------
 \section{Task 6: Benchmark and tradeoffs}
 
-Task 6 compares all ten configurations from Tasks 2 to 4 under the compute budget from the introduction: the AlexNet baseline and its eight variants, and ResNet-18. The AlexNet baseline here is the Task 3 run, because it was timed by the training routine. Every configuration is evaluated with the same functions on the same images: the test set, the Task 4 clean, rotated and noisy validation images, and FGSM at $\varepsilon=0.03$ on the 500 Task 5 images.
+We compare all ten configurations from Tasks 2 to 4 under the same budget: the AlexNet baseline, its eight variants and ResNet-18. The AlexNet baseline here is the Task 3 run, since the training routine timed it. All are evaluated with the same functions on the same images: the test set, the Task 4 clean, rotated and noisy validation images, and FGSM at $\varepsilon=0.03$ on the 500 Task 5 images.
 
 \subsection{Training cost and inference performance}
-Training time is the sum of the logged epoch times, which include the validation pass. Inference is measured separately on the T4 in FP32: latency is the mean time for one image (batch size 1, 200 repeats), throughput uses batches of 256 (50 repeats). Both exclude five warm-up passes and synchronize the GPU before reading the clock. Weight decay, dropout and augmentation do not change the network, so only the four distinct architectures need to be timed.
+Training time is the sum of the logged epoch times, validation included. Inference is timed separately on the T4 in FP32: latency for one image (200 repeats) and throughput for batches of 256 (50 repeats), after five warm-up passes and with the GPU synchronized before reading the clock. Weight decay, dropout and augmentation do not change the network, so only four architectures need timing.
 
 \begin{table}[htbp]\centering\small
 \caption{Inference cost per architecture on a Tesla T4 (FP32).}\label{tab:inference}
 \begin{tabular}{lrrrr}\toprule
 Architecture & Parameters & Weights & Latency (batch 1) & Throughput (batch 256)\\\midrule
-AlexNet small & 3{,}334{,}602 & 13.3 MB & 1.04 ms & 15{,}624 img/s\\
-AlexNet & 6{,}976{,}842 & 27.9 MB & 0.65 ms & 14{,}657 img/s\\
-AlexNet large & 12{,}750{,}666 & 51.0 MB & 0.63 ms & 13{,}494 img/s\\
-ResNet-18 & 11{,}173{,}962 & 44.8 MB & 2.61 ms & 2{,}149 img/s\\\bottomrule
+AlexNet small & 3{,}334{,}602 & 13.3 MB & 0.75 ms & 16{,}106 img/s\\
+AlexNet & 6{,}976{,}842 & 27.9 MB & 0.72 ms & 15{,}535 img/s\\
+AlexNet large & 12{,}750{,}666 & 51.0 MB & 0.69 ms & 14{,}444 img/s\\
+ResNet-18 & 11{,}173{,}962 & 44.8 MB & 2.57 ms & 2{,}349 img/s\\\bottomrule
 \end{tabular}\end{table}
 
-ResNet-18 is 4.0 times slower per image and has 6.8 times lower throughput than AlexNet. Its 11 million parameters are fewer than the large AlexNet's 12.8 million, yet it is far slower: its convolutions run on full $32\times32$ feature maps with up to 512 channels, while most of AlexNet's parameters sit in cheap fully connected layers. Parameter count is a poor guide to speed. The latency of the small AlexNet (1.04 ms) is higher than that of the larger ones, which cannot come from its compute. At batch size 1 the GPU is limited by kernel launch overhead, and the small model was timed first, so we treat differences below about half a millisecond as measurement noise.
+ResNet-18 is 3.6 times slower per image than AlexNet and has 6.6 times lower throughput, although it has fewer parameters than the large AlexNet. Its convolutions run on full-resolution feature maps with up to 512 channels, while most of AlexNet's parameters sit in cheap linear layers, so parameter count is a poor guide to speed. The small AlexNet's latency (0.75 ms) is above the baseline's (0.72 ms) and the large model's (0.69 ms), which its compute cannot explain. At batch size 1 the GPU waits on kernel launches, so we treat these differences as noise.
 
 \begin{table}[htbp]\centering\small
-\caption{All configurations under the same budget. $\Delta$ columns are relative to the AlexNet baseline; time ratio is training time relative to the baseline.}\label{tab:tradeoff}
+\caption{All configurations under the same budget. Ratio is training time relative to the AlexNet baseline, and $\Delta$ columns are differences from the baseline in points.}\label{tab:tradeoff}
 \setlength{\tabcolsep}{4pt}
 \begin{tabular}{lrrrrrrrr}\toprule
 Configuration & Train time & Ratio & Test & Rotation & Noise & FGSM & $\Delta$ test & $\Delta$ noise\\\midrule
-AlexNet small & 72.4 s & 0.92 & 76.69 & 64.48 & 67.10 & 4.8 & $-2.02$ & $+0.72$\\
-AlexNet baseline & 78.9 s & 1.00 & 78.71 & 70.32 & 66.38 & 6.8 & 0.00 & 0.00\\
-AlexNet large & 88.8 s & 1.13 & 78.68 & 68.64 & 67.30 & 5.6 & $-0.03$ & $+0.92$\\
-AlexNet no L2 & 75.2 s & 0.95 & 79.67 & 69.82 & 70.68 & 6.0 & $+0.96$ & $+4.30$\\
-AlexNet strong L2 & 79.0 s & 1.00 & 68.69 & 58.94 & 63.30 & 6.2 & $-10.02$ & $-3.08$\\
-AlexNet no dropout & 78.9 s & 1.00 & 76.97 & 66.64 & 70.08 & 5.2 & $-1.74$ & $+3.70$\\
-AlexNet dropout 0.3 & 79.4 s & 1.01 & 77.02 & 65.66 & 69.90 & 6.4 & $-1.69$ & $+3.52$\\
-AlexNet standard aug & 81.2 s & 1.03 & 77.45 & 68.44 & 65.06 & 5.6 & $-1.26$ & $-1.32$\\
-AlexNet strong aug & 93.9 s & 1.19 & 76.18 & 71.86 & \textbf{73.74} & \textbf{9.6} & $-2.53$ & $+7.36$\\
-ResNet-18 & 365.2 s & 4.63 & \textbf{81.71} & \textbf{71.86} & 62.98 & 3.2 & $+3.00$ & $-3.40$\\\bottomrule
+AlexNet small & 72.6 s & 0.91 & 76.69 & 64.48 & 67.10 & 4.8 & $-2.02$ & $+0.72$\\
+AlexNet baseline & 79.6 s & 1.00 & 78.71 & 70.32 & 66.38 & 6.8 & 0.00 & 0.00\\
+AlexNet large & 89.9 s & 1.13 & 78.68 & 68.64 & 67.30 & 5.6 & $-0.03$ & $+0.92$\\
+AlexNet no L2 & 77.0 s & 0.97 & 79.67 & 69.82 & 70.68 & 6.0 & $+0.96$ & $+4.30$\\
+AlexNet strong L2 & 79.9 s & 1.00 & 68.69 & 58.94 & 63.30 & 6.2 & $-10.02$ & $-3.08$\\
+AlexNet no dropout & 79.6 s & 1.00 & 76.97 & 66.64 & 70.08 & 5.2 & $-1.74$ & $+3.70$\\
+AlexNet dropout 0.3 & 79.9 s & 1.00 & 77.02 & 65.66 & 69.90 & 6.4 & $-1.69$ & $+3.52$\\
+AlexNet standard aug & 82.2 s & 1.03 & 77.45 & 68.44 & 65.06 & 5.6 & $-1.26$ & $-1.32$\\
+AlexNet strong aug & 93.2 s & 1.17 & 76.18 & 71.86 & \textbf{73.74} & \textbf{9.6} & $-2.53$ & $+7.36$\\
+ResNet-18 & 372.1 s & 4.67 & \textbf{81.71} & \textbf{71.86} & 62.98 & 3.2 & $+3.00$ & $-3.40$\\\bottomrule
 \end{tabular}
-\par\smallskip\footnotesize All accuracies in \%. Test on 10,000 images; rotation and noise on the 5,000 Task 4 validation images; FGSM ($\varepsilon=0.03$) on 500 test images.
+\par\smallskip\footnotesize All accuracies in \%. Test accuracy uses the 10,000 test images, rotation and noise the 5,000 Task 4 validation images and FGSM ($\varepsilon=0.03$) 500 test images.
 \end{table}
 
-\fig{t6_tradeoffs.png}{0.99}{Each configuration's test accuracy against training time (left) and inference throughput (middle), and its accuracy on noisy images against training time (right). AlexNet variants that share an architecture have the same throughput.}
+\fig{t6_tradeoffs.png}{0.99}{Test accuracy against training time (left) and inference throughput (middle), and noisy accuracy against training time (right). AlexNet variants with the same architecture share a throughput.}
 
-Table~\ref{tab:tradeoff} gives the main picture. ResNet-18 is the most accurate on clean test images and, tied with strong augmentation, under rotation. But it is the least robust to noise of all ten configurations: its accuracy falls by 19.7 points when noise is added, against 12.2 for the AlexNet baseline and 2.7 for AlexNet with strong augmentation. It is also the easiest to fool with FGSM. The strongly augmented AlexNet is the most robust to both noise and FGSM, at the lowest clean accuracy among the reasonable configurations.
+ResNet-18 is the most accurate on clean images and, tied with strong augmentation, under rotation. It is also the least robust to noise of all ten configurations, losing 19.7 points against 12.2 for the AlexNet baseline and 2.7 with strong augmentation, and the easiest to fool with FGSM. The strongly augmented AlexNet is the most robust to both noise and FGSM, with the lowest clean accuracy among the reasonable configurations.
 
 \subsection{Sensitivity to training duration, seed and hardware}
 
-\paragraph{Training duration.} Eight of the ten configurations reached their best validation accuracy in the last epoch, so most of them were still improving when training stopped. Ranking the configurations by validation accuracy at epoch 4 and at epoch 8 gives the same top three (ResNet-18, no L2, large) and the same bottom two (strong augmentation, strong L2). Four of the five configurations in between change rank (the baseline moves from sixth to fourth, no dropout from fourth to sixth), so their order depends on when we stop.
+\paragraph{Training duration:} Eight of the ten configurations reached their best validation accuracy in the last epoch, so most were still improving. Ranked by validation accuracy at epoch 4 and at epoch 8, the top three (ResNet-18, no L2, large) and the bottom two (strong augmentation, strong L2) stay put. Four of the five in between change rank, with the baseline moving from sixth to fourth and no dropout from fourth to sixth.
 
-\paragraph{Random seed.} We trained the AlexNet baseline and ResNet-18 twice more, with seeds 43 and 44. The seed changes the initial weights, dropout masks and shuffling order; the data split stays fixed.
+\paragraph{Random seed:} We trained the AlexNet baseline and ResNet-18 twice more, with seeds 43 and 44, which change the initial weights, dropout masks and shuffling but not the split.
 
 \begin{table}[htbp]\centering\small
 \caption{Three seeds per model (mean $\pm$ standard deviation, with range).}\label{tab:seeds}
 \begin{tabular}{lccc}\toprule
 Model & Best val. acc. & Test acc. & Training time\\\midrule
-AlexNet baseline & $78.19\pm0.32$ (77.96--78.56) & $77.58\pm1.21$ (76.30--78.71) & $81.8\pm2.6$ s\\
-ResNet-18 & $81.44\pm1.40$ (79.90--82.64) & $80.71\pm1.15$ (79.46--81.71) & $379.7\pm12.5$ s\\\bottomrule
+AlexNet baseline & $78.19\pm0.32$ (77.96--78.56) & $77.58\pm1.21$ (76.30--78.71) & $79.7\pm0.1$ s\\
+ResNet-18 & $81.44\pm1.40$ (79.90--82.64) & $80.71\pm1.15$ (79.46--81.71) & $372.3\pm0.3$ s\\\bottomrule
 \end{tabular}\end{table}
 
 \fig{t6_seed_spread.png}{0.5}{Test accuracy for seeds 42, 43 and 44. The horizontal line is the mean.}
 
-Test accuracy varies by about 1.2 points (standard deviation) between seeds for both models. ResNet-18 beats AlexNet for every seed, by 3.00, 3.24 and 3.16 points, so that difference is solid. Differences of about one point between single runs, which covers most of Task 3, are not. ResNet-18's own training was not stable either: with seed 43 its validation accuracy fell from 81.8\% at epoch 7 to 77.4\% at epoch 8, and its best epoch was 7 for two of the three seeds.
+Test accuracy varies by about 1.2 points (standard deviation) for both models. ResNet-18 wins for every seed, by 3.00, 3.24 and 3.16 points, so that difference holds. One-point differences between single runs, which covers most of Task 3, do not. ResNet-18's training was not stable either: with seed 43 its validation accuracy fell from 81.8\% at epoch 7 to 77.4\% at epoch 8, and its best epoch was 7 for two of the three seeds.
 
-\paragraph{Hardware.} All timings come from one Tesla T4 in FP32. The notebook defines a mixed-precision flag, but the training and evaluation loops never use autocast, so no run used FP16. Even on the same GPU type, the seed runs of ResNet-18 took about 48 seconds per epoch against 45.7 for the first run, a 6\% difference with identical code. On another GPU, with mixed precision, or on a CPU or Apple MPS device, both the absolute times and the AlexNet-to-ResNet ratio would change. Accuracy depends much less on hardware: the Task 3 and 4 results were identical to two decimals across two T4 sessions.
+\paragraph{Hardware:} All timings come from one T4 in FP32. The notebook defines a mixed-precision flag, but no loop uses autocast. Timings move between sessions: ResNet-18 took 46.5 seconds per epoch throughout the final session, while an earlier T4 session measured 45.7 to 48 seconds with the same code. Within one session they are stable (the three ResNet-18 seeds differ by 0.3 s in total), but batch-1 latency is not: in Challenge 1 the same pruned model measured 2.75 and 3.52 ms. Another GPU, mixed precision or a CPU would change both the absolute times and the AlexNet-to-ResNet ratio. Accuracy depends much less on hardware, as the identical results across three T4 sessions show.
 
 \subsection{Discussion}
 
 \paragraph{Which model would we choose, and why?}
-Under our budget we would choose ResNet-18 when clean accuracy is what matters. It is 3.0 points more accurate than AlexNet on the test set, and it wins for all three seeds by more than the seed spread. A full training run takes about six minutes on a free Colab T4, which is affordable, and 2.6 ms per image is fast enough for most offline uses.
+If clean accuracy is what matters, ResNet-18. It is 3.0 points ahead on the test set and wins for all three seeds by more than the seed spread. A full run takes about six minutes on a free Colab T4, and 2.6 ms per image is fast enough for most offline uses.
 
-The choice changes if the inputs are noisy or inference has to be cheap. ResNet-18 loses 19.7 points under Gaussian noise, the most of any configuration, and runs at one seventh of AlexNet's throughput. AlexNet trained with strong augmentation costs 1.19 times the baseline's training time, nothing extra at inference, and keeps 73.7\% accuracy on noisy images against 63.0\% for ResNet-18. In that setting it is the better choice, at the price of about 5.5 points of clean test accuracy. Neither model resists FGSM (below 10\% at $\varepsilon=0.03$ for every configuration), so adversarial robustness does not decide between them.
+The answer changes if inputs are noisy or inference must be cheap. ResNet-18 loses 19.7 points under noise, the most of any configuration, and runs at about 15\% of AlexNet's throughput. AlexNet with strong augmentation costs 1.17 times the baseline's training time and nothing extra at inference, and keeps 73.7\% on noisy images against 63.0\% for ResNet-18, at the price of about 5.5 points of clean accuracy. No configuration resists FGSM (all below 10\% at $\varepsilon=0.03$), so adversarial robustness does not decide between them.
 
 \paragraph{Which changes improve accuracy or robustness at an acceptable cost?}
-\begin{itemize}
-\item Strong augmentation is the only change with a large, clear benefit: $+7.36$ points under noise and $+1.54$ under rotation for 19\% more training time and no inference cost. It costs 2.16 points of clean validation accuracy (2.53 on test). Worth it whenever corrupted inputs are expected.
-\item Switching to ResNet-18 buys 3.0 points of clean accuracy for 4.6 times the training time and 6.8 times lower throughput, and makes the model less robust to noise. Worth it only if clean accuracy is the goal.
-\item A wider classifier is not worth it: 1.83 times the parameters and 13\% more training time for no gain on the test set ($-0.03$ points).
-\item Removing weight decay ($+0.96$ test, $+4.30$ noise) and removing or reducing dropout ($+3.5$ to $+3.7$ noise, about $-1.7$ test) are free, but the clean accuracy changes are within the seed spread, and the noise gains come from single runs. We would not adopt them without repeating them over seeds.
-\item Strong weight decay costs nothing to compute but loses 10 points of accuracy. Standard crop and flip makes every metric slightly worse at eight epochs.
-\end{itemize}
+Strong augmentation is the only change with a large, clear benefit: $+7.36$ points under noise and $+1.54$ under rotation for 17\% more training time, at a cost of 2.16 points of clean validation accuracy (2.53 on test). It is worth it whenever corrupted inputs are expected. ResNet-18 buys 3.0 points of clean accuracy for 4.7 times the training time and 6.6 times lower throughput, and is less robust to noise. A wider classifier is not worth 1.83 times the parameters for $-0.03$ points. Removing weight decay ($+0.96$ test, $+4.30$ noise) or reducing dropout ($+3.5$ to $+3.7$ noise, about $-1.7$ test) costs nothing, but the gains are within the seed spread or come from single runs, so we would repeat them before adopting them. Strong weight decay loses 10 points, and standard crop and flip makes every metric slightly worse at eight epochs.
 
 \paragraph{Which conclusions are sensitive to training duration, seed or hardware?}
-The conclusions that hold up are ResNet-18's clean-accuracy lead (all three seeds), the robustness gain from strong augmentation (7.4 points, several times the seed spread), and the damage from strong weight decay (10 points). Everything within about 1.5 points is sensitive to the seed: the width comparison, the weight decay and dropout rankings, and the small noise differences between them. Most results also depend on training duration. Eight of ten configurations were still improving at epoch 8, and longer training usually helps ResNet-18 with batch normalization and augmented models more than the baseline, so the gaps could grow or shrink. All timings and time ratios belong to a T4 in FP32 and vary by about 6\% even between runs on the same GPU type.
+Three conclusions hold up: ResNet-18's clean-accuracy lead, the robustness gain from strong augmentation (7.4 points, several times the seed spread) and the damage from strong weight decay. Anything within about 1.5 points depends on the seed, which covers the width, weight decay and dropout rankings. Most results also depend on duration, since eight of ten configurations were still improving, and longer training tends to help batch-normalized and augmented models more than the baseline. All timings belong to a T4 in FP32.
 
 \paragraph{What further experiment would give the most useful evidence?}
-Train ResNet-18 with strong augmentation, and repeat it together with the AlexNet baseline, AlexNet with strong augmentation and plain ResNet-18 over at least three seeds with a longer schedule, for example 30 epochs with learning-rate decay. This one experiment would show whether strong augmentation fixes ResNet-18's weakness to noise, and whether the accuracy and robustness gaps survive longer training. That is exactly what our recommendation depends on. Evaluating the same models with a multi-step attack such as PGD would then tell us whether the small FGSM differences mean anything.
+Train ResNet-18 with strong augmentation and repeat it, together with the AlexNet baseline, the strongly augmented AlexNet and plain ResNet-18, over at least three seeds with a longer schedule, for example 30 epochs with learning-rate decay. That would show whether strong augmentation fixes ResNet-18's weakness to noise and whether the gaps survive longer training, which is what our recommendation rests on. A multi-step attack such as PGD on the same models would then show whether the small FGSM differences mean anything.
+
+% ---------------------------------------------------------------------------
+\section{Challenge 1: Model compression}
+
+\subsection{Setup}
+Task 6 recommends ResNet-18 for clean accuracy, but it is the slow model, so we compress it and compare each version with the uncompressed ResNet-18, measured again in the same session with the same functions. A compressed model is acceptable if its test accuracy is at most \textbf{1 point} below the reference. We measure storage (the saved weights, also after gzip, which shows what sparse storage could save), the number of non-zero convolution and linear weights, and speed (latency at batch size 1 and throughput at 256, with the Task 6 benchmark). Keeping these apart matters, because a smaller file does not automatically mean faster inference.
+
+We try three methods. \emph{FP16} converts weights and inputs to 16-bit floats, with no training. \emph{Global magnitude pruning} at 50\% and 80\% zeroes the smallest convolution and linear weights across the whole network (\texttt{torch.nn.utils.prune}, batch normalization untouched) and then fine-tunes for one epoch while the pruning masks keep the removed weights at zero. Finally we combine 50\% pruning with FP16.
+
+\subsection{Results}
+\begin{table}[htbp]\centering\small
+\caption{ResNet-18 compression on the 10,000 test images (Tesla T4).}\label{tab:compression}
+\setlength{\tabcolsep}{4pt}
+\resizebox{\linewidth}{!}{\begin{tabular}{lrrrrrrr}\toprule
+Version & Test acc. & Change & Non-zero weights & File & Gzip & Throughput & Latency\\\midrule
+FP32 reference & 81.71\% & 0.00 & 11{,}164{,}352 & 44.8 MB & 41.5 MB & 2{,}429 img/s & 3.28 ms\\
+FP16 & 81.72\% & $+0.01$ & 11{,}164{,}327 & 22.4 MB & 20.5 MB & \textbf{7{,}783 img/s} & 3.79 ms\\
+Pruned 50\% + fine-tune & 83.66\% & $+1.95$ & 5{,}582{,}176 & 44.8 MB & 25.1 MB & 2{,}405 img/s & 3.52 ms\\
+Pruned 80\% + fine-tune & 83.20\% & $+1.49$ & 2{,}232{,}870 & 44.8 MB & \textbf{12.8 MB} & 2{,}401 img/s & 2.50 ms\\
+Pruned 50\% + FP16 & 83.65\% & $+1.94$ & 5{,}582{,}176 & 22.4 MB & 13.7 MB & \textbf{7{,}869 img/s} & 5.36 ms\\\bottomrule
+\end{tabular}}\end{table}
+
+\fig{c1_compression.png}{0.95}{Storage (left) and throughput at batch size 256 (right), with test accuracy above each speed bar. The 50\% pruned model appears twice because its cell ran twice in the interrupted session, so both bars are the same model.}
+
+All versions are within the tolerance, but only FP16 makes inference faster. It halves the file, changes accuracy by 0.01 points and gives 3.2 times the throughput, because the T4's tensor cores work on half-precision matrices. Conversion takes 0.02 seconds. For a single image it is slightly slower (3.79 against 3.28 ms), since at batch size 1 the time goes to launching kernels, not arithmetic.
+
+Pruning only saves storage. At 80\% the gzip file shrinks to 31\% of the reference, but the saved file stays at 44.8 MB and throughput does not move: the zeros are still stored and multiplied by dense kernels. Getting speed out of sparsity would need structured pruning (removing whole channels) or sparse kernels. The pruned models' batch-1 latencies are within the measurement noise.
+
+Right after pruning, removing half of the weights cost only 0.53 points (81.18\%), so many trained weights barely matter. At 80\% accuracy collapsed to 30.48\%, and one fine-tuning epoch brought it back to 83.20\%.
+
+The pruned models end up 1.5 to 2.0 points \emph{above} the reference. That does not mean pruning improves the model. The reference stopped after eight epochs while still improving, and fine-tuning adds a ninth, so a fair comparison would train the unpruned model one more epoch too, which we did not run. What the results do show is that one epoch is enough to recover from removing 80\% of the weights. Compression costs about 47 seconds per pruned model, nearly all of it fine-tuning, against 372 seconds for the original training.
+
+For speed, FP16 is free and lifts ResNet-18 from 2,429 to about 7,800 images per second, half way to AlexNet's 15,535. If storage also matters, 50\% pruning plus FP16 gives a third of the gzip size and 3.24 times the throughput. These results come from one seed, one fine-tuning epoch and one T4 session.
+
+% ---------------------------------------------------------------------------
+\section{Challenge 2: Generalization to unseen shifts}
+
+\subsection{Setup}
+The models are fixed before this section: ResNet-18 (our pick for clean accuracy), AlexNet with strong augmentation (our pick for noisy inputs) and the AlexNet baseline as a reference. Nothing here is used to choose a model.
+
+\textbf{Unseen corruption families:} Training and model selection only involved crops, flips, rotation, shear and Gaussian noise. We apply three new families to the 10,000 test images at three severities each: Gaussian blur ($5\times5$ kernel, $\sigma=0.5,\,1.0,\,1.5$), JPEG compression (quality 60, 30, 10) and contrast reduction (factor 0.6, 0.4, 0.2 around each image's mean). The corruptions work in the $[0,1]$ pixel domain (JPEG on the 8-bit image), and the result gets the usual normalization with the training-split statistics. Labels do not change and every image keeps its identity, so we can count images that were right when clean and became wrong.
+
+\textbf{A new image domain:} CIFAR-10.1 (v6, Recht et al.\ 2019) has 2,000 new photographs, 200 per class, collected for the same ten classes with the original CIFAR-10 procedure. The class indices match CIFAR-10, and the images are already $32\times32$ RGB, so they only need scaling to $[0,1]$ and the same normalization. The shift is natural, new photographs rather than a synthetic corruption.
+
+\subsection{Unseen corruptions}
+\begin{table}[htbp]\centering\small
+\caption{Test accuracy (\%) under unseen corruptions at three severities. Clean test accuracy is 78.71, 76.18 and 81.71.}\label{tab:unseen}
+\begin{tabular}{lccc}\toprule
+Corruption & AlexNet baseline & AlexNet strong aug & ResNet-18\\\midrule
+Blur $\sigma=0.5\,/\,1.0\,/\,1.5$ & 76.0 / 52.7 / 40.1 & 74.9 / \textbf{61.7} / \textbf{49.3} & \textbf{80.0} / 49.5 / 35.7\\
+JPEG quality 60 / 30 / 10 & \textbf{74.6} / 71.2 / 61.3 & 73.2 / \textbf{71.3} / \textbf{62.4} & 72.9 / 66.5 / 51.5\\
+Contrast 0.6 / 0.4 / 0.2 & 73.3 / 60.0 / 29.5 & 72.6 / 56.7 / 24.7 & \textbf{79.3} / \textbf{71.6} / \textbf{40.7}\\\bottomrule
+\end{tabular}\end{table}
+
+\fig{c2_unseen_corruptions.png}{0.99}{Test accuracy against severity for each corruption family (severity 0 is the clean test set).}
+
+No model is robust to every shift, and the ranking depends on the family. Under blur, strong augmentation transfers best: at $\sigma=1.0$ it loses 14.5 points, the baseline 26.0 and ResNet-18 32.2. Its training noise and crops seem to make it rely less on fine detail. ResNet-18 is best at $\sigma=0.5$ and worst from $\sigma=1.0$ on.
+
+Under JPEG, ResNet-18 is the most fragile. Already at quality 60 it falls below both AlexNets, and at quality 10 it loses 30.2 points against 17.4 and 13.8. JPEG removes fine detail and adds $8\times8$ block edges, and ResNet-18, which keeps full resolution in its first stage, seems to depend on that detail most.
+
+Under low contrast the order flips. ResNet-18 is clearly best (40.7\% at factor 0.2 against 29.5\%) and strong augmentation is worst, since noise, rotation and crops taught it nothing about washed-out images. So the robustness strong augmentation bought in Task 4 carries over to blur and slightly to JPEG, but not to contrast, while ResNet-18's weakness to noise comes back under blur and JPEG.
+
+\fig{c2_failure_examples.png}{0.65}{One test image per family that ResNet-18 gets right when clean and wrong at the highest severity, shown at every severity with ResNet-18's prediction.}
+
+At the highest severity ResNet-18 falls back on one class. Under strong blur, half of its 5,019 new errors (49.8\%) are cat (frog to cat 564 times, automobile to cat 427). Under low contrast, 62.2\% of its 4,466 new errors are deer (horse to deer 494, frog to deer 447). JPEG errors are more spread out (cat takes 21.3\%), and the largest pair, automobile to truck (192), confuses similar classes. When an image loses most of its detail, the model does not hesitate between neighbours but picks a default class that fits a smooth, low-detail image. In the examples, the ship and the frog are still recognisable to a person where ResNet-18 fails, except the frog at contrast 0.2.
+
+\subsection{New photographs: CIFAR-10.1}
+\begin{table}[htbp]\centering\small
+\caption{Accuracy on the CIFAR-10 test set and on CIFAR-10.1, with recall for the classes that change most.}\label{tab:cifar101}
+\begin{tabular}{lrrrrrr}\toprule
+Model & CIFAR-10 & CIFAR-10.1 & Drop & Airplane & Bird & Truck\\\midrule
+AlexNet baseline & 78.71\% & 66.35\% & 12.36 & 51.0\% & \textbf{59.0\%} & 64.0\%\\
+AlexNet strong aug & 76.18\% & 62.65\% & 13.53 & 60.5\% & 34.5\% & \textbf{83.5\%}\\
+ResNet-18 & \textbf{81.71\%} & \textbf{71.10\%} & \textbf{10.61} & \textbf{61.0\%} & 54.5\% & 80.0\%\\\bottomrule
+\end{tabular}\end{table}
+
+All three models lose 10.6 to 13.5 points on the new photographs. The ranking is the same as on CIFAR-10, as Recht et al.\ also found for many larger models, and ResNet-18 loses least. Strong augmentation does not help here and even loses the most, while its per-class recall shifts unevenly (34.5\% on birds against 59.0\% for the baseline, but truck and ship are its best classes). A change in how the photos were collected costs about as much as a moderate synthetic corruption, and noise and rotation augmentation do not prepare a model for it. With 200 images per class, single per-class numbers can move several points by chance.
+
+\subsection{What the challenges add}
+Task 4 measured robustness to corruptions that were also used in training, and these tests show it does not carry over evenly. ResNet-18 is the better choice for new photographs and low contrast, AlexNet with strong augmentation for blurred or heavily compressed images. A model meant to handle all of them would need augmentation that covers them, such as blur, JPEG and contrast changes, which we did not train. Each model was trained with one seed.
 
 % ---------------------------------------------------------------------------
 \section{Conclusions}
-On CIFAR-10 with an eight-epoch budget on one T4, ResNet-18 reaches 81.7\% test accuracy against 78.0\% for our CIFAR-adapted AlexNet, and the lead holds across seeds. It costs 4.6 times the training time and about 4 times the per-image latency. Wider classifiers and changes to weight decay or dropout move accuracy by about a point, which is within the variation between seeds. Strong augmentation with rotation, shear and noise is the one cheap change that clearly improves robustness, cutting noise-induced errors from 732 to 252 on 5,000 images. None of the models resists a simple gradient attack, and better accuracy on clean images does not mean better robustness: the most accurate model was the most fragile under noise.
+With an eight-epoch budget on one T4, ResNet-18 reaches 81.7\% test accuracy against 78.0\% for our CIFAR-adapted AlexNet, and the lead holds across seeds. It costs 4.7 times the training time and 3.6 times the per-image latency. Width, weight decay and dropout move accuracy by about a point, within the seed spread. Strong augmentation with rotation, shear and noise is the one cheap change that clearly improves robustness, cutting noise-induced errors from 732 to 252 on 5,000 images. No model resists a simple gradient attack, and the most accurate model was the most fragile under noise.
+
+In the challenges, FP16 tripled ResNet-18's throughput at no loss of accuracy, while pruning 80\% of its weights only shrank the compressed file. On unseen corruptions and new photographs no model was best everywhere: strong augmentation transferred to blur and JPEG but not to contrast or CIFAR-10.1, where ResNet-18 kept the lead.
 
 \section*{Reproduction}
 \addcontentsline{toc}{section}{Reproduction}
-Open \texttt{ID2223\_Lab1\_\allowbreak Full\_\allowbreak End\_\allowbreak to\_\allowbreak End.ipynb} in Google Colab, select a T4 GPU runtime and run all cells. The notebook downloads CIFAR-10 with torchvision, mounts Google Drive and stores checkpoints and figures under \texttt{MyDrive/kth-sml-lab1/local/}. With \texttt{FORCE\_RETRAIN = True} every model is retrained (about one hour on a T4); with \texttt{False}, finished runs are loaded from Drive and interrupted runs resume. Part A of the notebook contains the introductory Lab 1 tutorial and is independent of the CIFAR-10 experiments in Part B.
+Open \texttt{ID2223\_Lab1\_\allowbreak Full\_\allowbreak End\_\allowbreak to\_\allowbreak End.ipynb} in Google Colab, choose a T4 GPU runtime and run all cells. The notebook downloads CIFAR-10 with torchvision and CIFAR-10.1 (about 6 MB) from the authors' repository, mounts Google Drive and stores checkpoints and figures under \texttt{MyDrive/kth-sml-lab1/local/}. With \texttt{FORCE\_RETRAIN = True} every model is retrained, which takes a little over an hour on a T4 including the challenges, while with \texttt{False} finished runs load from Drive and interrupted ones resume. \texttt{CLEAR\_ARTIFACTS = True} empties the stored checkpoints and figures first. The reported run used Python 3.13.16, PyTorch 2.14.1 and torchvision 0.29.1 (CUDA 13.0). Part A of the notebook is the introductory Lab 1 tutorial and is independent of the CIFAR-10 work in Part B.
 
 \section*{References}
 \addcontentsline{toc}{section}{References}
@@ -422,7 +541,9 @@ Open \texttt{ID2223\_Lab1\_\allowbreak Full\_\allowbreak End\_\allowbreak to\_\a
 \item I. J. Goodfellow, J. Shlens and C. Szegedy. Explaining and harnessing adversarial examples. In \emph{ICLR}, 2015. (FGSM)
 \item S. Ioffe and C. Szegedy. Batch normalization: accelerating deep network training by reducing internal covariate shift. In \emph{ICML}, 2015.
 \item N. Srivastava, G. Hinton, A. Krizhevsky, I. Sutskever and R. Salakhutdinov. Dropout: a simple way to prevent neural networks from overfitting. \emph{JMLR} 15, 2014.
-\item PyTorch and torchvision documentation, \url{https://pytorch.org/docs/}. Course notebook \texttt{ID2223\_Lab1.ipynb}.
+\item B. Recht, R. Roelofs, L. Schmidt and V. Shankar. Do ImageNet classifiers generalize to ImageNet? In \emph{ICML}, 2019. CIFAR-10.1 data: \url{https://github.com/modestyachts/CIFAR-10.1}.
+\item S. Han, J. Pool, J. Tran and W. J. Dally. Learning both weights and connections for efficient neural networks. In \emph{NeurIPS}, 2015. (Magnitude pruning)
+\item PyTorch and torchvision documentation, \url{https://pytorch.org/docs/}, including the pruning tutorial \url{https://pytorch.org/tutorials/intermediate/pruning_tutorial.html}. Course notebook \texttt{ID2223\_Lab1.ipynb}.
 \end{enumerate}
 
 \end{document}
