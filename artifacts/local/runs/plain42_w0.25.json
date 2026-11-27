@@ -1,0 +1,116 @@
+{
+ "name": "plain42_w0.25",
+ "config": {
+  "name": "plain42_w0.25",
+  "arch": "resnet",
+  "width": 0.25,
+  "blocks": [
+   5,
+   5,
+   5,
+   5
+  ],
+  "residual": false,
+  "dropout": 0.0,
+  "weight_decay": 0.0005,
+  "lr": 0.05,
+  "momentum": 0.9,
+  "batch_size": 128,
+  "epochs": 8,
+  "warmup_epochs": 1,
+  "augment": "none",
+  "seed": 42
+ },
+ "history": [
+  {
+   "epoch": 1,
+   "train_loss": 2.1112713541666666,
+   "train_accuracy": 0.2000222222222222,
+   "val_loss": 1.8878192138671874,
+   "val_accuracy": 0.2774,
+   "epoch_seconds": 28.55429483402986,
+   "lr_end": 0.05
+  },
+  {
+   "epoch": 2,
+   "train_loss": 1.6119592013888888,
+   "train_accuracy": 0.40453333333333336,
+   "val_loss": 1.68719638671875,
+   "val_accuracy": 0.4242,
+   "epoch_seconds": 28.02913666598033,
+   "lr_end": 0.04752422169756048
+  },
+  {
+   "epoch": 3,
+   "train_loss": 1.3418186631944444,
+   "train_accuracy": 0.5100888888888889,
+   "val_loss": 1.5181753173828125,
+   "val_accuracy": 0.4988,
+   "epoch_seconds": 28.20206916698953,
+   "lr_end": 0.040587245046468344
+  },
+  {
+   "epoch": 4,
+   "train_loss": 1.1502944444444445,
+   "train_accuracy": 0.5832222222222222,
+   "val_loss": 1.1981094482421875,
+   "val_accuracy": 0.5806,
+   "epoch_seconds": 27.74959887500154,
+   "lr_end": 0.03056302334890786
+  },
+  {
+   "epoch": 5,
+   "train_loss": 0.9982122395833334,
+   "train_accuracy": 0.6450222222222223,
+   "val_loss": 1.0132645751953124,
+   "val_accuracy": 0.6378,
+   "epoch_seconds": 27.538272958016023,
+   "lr_end": 0.019436976651092144
+  },
+  {
+   "epoch": 6,
+   "train_loss": 0.8661221354166667,
+   "train_accuracy": 0.6925111111111111,
+   "val_loss": 0.9315116455078125,
+   "val_accuracy": 0.6712,
+   "epoch_seconds": 30.01698229199974,
+   "lr_end": 0.009412754953531664
+  },
+  {
+   "epoch": 7,
+   "train_loss": 0.7373053819444444,
+   "train_accuracy": 0.7387111111111111,
+   "val_loss": 0.8315435424804688,
+   "val_accuracy": 0.7096,
+   "epoch_seconds": 28.485892749973573,
+   "lr_end": 0.0024757783024395245
+  },
+  {
+   "epoch": 8,
+   "train_loss": 0.6377577256944444,
+   "train_accuracy": 0.7772444444444444,
+   "val_loss": 0.824342431640625,
+   "val_accuracy": 0.714,
+   "epoch_seconds": 28.000580959022045,
+   "lr_end": 0.0
+  }
+ ],
+ "best_epoch": 8,
+ "params": 1868186,
+ "macs": 91276544,
+ "train_seconds": 226.57682850101264,
+ "seconds_per_epoch": 28.32210356262658,
+ "train_eval": {
+  "cross_entropy": 0.5881330688476563,
+  "accuracy": 0.795,
+  "macro_f1": 0.7939565126448558
+ },
+ "val": {
+  "cross_entropy": 0.824342431640625,
+  "accuracy": 0.714,
+  "macro_f1": 0.7151939000618184
+ },
+ "device": "Apple M2 Pro (MPS)",
+ "profile": "local",
+ "torch": "2.15.0"
+}
